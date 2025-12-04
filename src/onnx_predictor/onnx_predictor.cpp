@@ -19,28 +19,31 @@ OnnxPredictor::OnnxPredictor(const std::string &config_filepath)
 
     config_loader = std::make_unique<ConfigLoader>(config_filepath);
 
-    std::optional<std::string> det_filepath =
-        config_loader->get<std::string>(DET_ONNX_MODEL_FILEPATH);
-    std::optional<std::string> rec_filepath =
-        config_loader->get<std::string>(REC_ONNX_MODEL_FILEPATH);
-    std::optional<std::string> cls_filepath =
-        config_loader->get<std::string>(CLS_ONNX_MODEL_FILEPATH);
+    det_filepath =
+        config_loader->get<std::string>(DET_ONNX_MODEL_FILEPATH).value_or("");
+    rec_filepath =
+        config_loader->get<std::string>(REC_ONNX_MODEL_FILEPATH).value_or("");
+    cls_filepath =
+        config_loader->get<std::string>(CLS_ONNX_MODEL_FILEPATH).value_or("");
 
-    if (!det_filepath || !(det_session = createOnnxSession(*det_filepath)))
+    if (det_filepath.empty() ||
+        !(det_session = createOnnxSession(det_filepath)))
     {
         throw std::runtime_error("Failed to load ONNX model");
     }
-    fillModelInfo(*det_session);
+    fillModelInfo(*det_session, det_filepath);
 
-    if (!rec_filepath || !(rec_session = createOnnxSession(*rec_filepath)))
+    if (rec_filepath.empty() ||
+        !(rec_session = createOnnxSession(rec_filepath)))
     {
         throw std::runtime_error("Failed to load ONNX model");
     }
-    fillModelInfo(*rec_session);
+    fillModelInfo(*rec_session, rec_filepath);
 
-    if (cls_filepath && (cls_session = createOnnxSession(*cls_filepath)))
+    if (!cls_filepath.empty() &&
+        (cls_session = createOnnxSession(cls_filepath)))
     {
-        fillModelInfo(**cls_session);
+        fillModelInfo(**cls_session, cls_filepath);
     }
 
     side_length_limit =
@@ -53,9 +56,23 @@ OnnxPredictor::OnnxPredictor(const std::string &config_filepath)
     images       = image_loader->get_images();
     std::cout << "\n[INFO] " << images->size() << " images loaded."
               << std::endl;
+
+    keep_ratio = false;
 }
 
-void OnnxPredictor::predict() {}
+void OnnxPredictor::predict()
+{
+    print_onnx_model_info();
+
+    for (auto &image : *images)
+    {
+        std::cout << image.first << std::endl;
+    }
+
+    //std::unique_ptr<DetectionPreprocessor> detection_preprocessor =
+    //    std::make_unique<DetectionPreprocessor>(keep_ratio, side_length_limit,
+    //                                            limit_type, );
+}
 
 std::unique_ptr<Ort::Session>
 OnnxPredictor::createOnnxSession(const std::string &filepath) const
@@ -82,7 +99,8 @@ OnnxPredictor::createOnnxSession(const std::string &filepath) const
     }
 }
 
-void OnnxPredictor::fillModelInfo(const Ort::Session &session)
+void OnnxPredictor::fillModelInfo(const Ort::Session &session,
+                                  const std::string  &model_name)
 {
     Ort::AllocatorWithDefaultOptions allocator;
     size_t                           num_inputs = session.GetInputCount();
@@ -104,7 +122,7 @@ void OnnxPredictor::fillModelInfo(const Ort::Session &session)
         }
         std::cout << "]\n";
 
-        onnx_model_info.inputs.push_back(
+        onnx_model_info.model[model_name].inputs.push_back(
             {std::move(name.get()), std::move(shape)});
     }
 }
@@ -125,11 +143,16 @@ void OnnxPredictor::print_vector(const std::vector<T> &v) const
 void OnnxPredictor::print_onnx_model_info() const
 {
     std::cout << "OnnxModelInfo:\n";
-    for (const auto &input : onnx_model_info.inputs)
+
+    for (const auto &input : onnx_model_info.model)
     {
-        std::cout << "  Input name: " << input.name << "\n";
-        std::cout << "  Shape: ";
-        print_vector(input.shape);
-        std::cout << "\n";
+        std::cout << "  Model: " << input.first << "\n";
+        for (const auto &input_info : input.second.inputs)
+        {
+            std::cout << "    Input name: " << input_info.name << "\n";
+            std::cout << "    Shape: ";
+            print_vector(input_info.shape);
+            std::cout << "\n";
+        }
     }
 }

@@ -11,7 +11,7 @@ int main(int argc, char *argv[])
 
     std::unique_ptr<OnnxPredictor> predictor =
         std::make_unique<OnnxPredictor>(argv[1]);
-    // predictor->predict();
+    predictor->predict();
 
     return 0;
 }
