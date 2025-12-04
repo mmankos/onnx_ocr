@@ -39,7 +39,12 @@ void ImageLoader::load_images(const std::string &image_path)
     }
     else if (std::filesystem::is_regular_file(image_path))
     {
-        read_image(image_path);
+        std::filesystem::path entry_path(image_path);
+        std::string entry_extension = entry_path.extension().c_str();
+        if (supported_extensions.count(entry_extension))
+        {
+            read_image(entry_path);
+        }
     }
     else
     {
@@ -57,7 +62,6 @@ void ImageLoader::read_image(const std::string &image_filepath)
     {
         std::cerr << "[ERROR]: Failed to read image: " << image_filepath
                   << std::endl;
-        images[image_filepath] = cv::Mat();
     }
     else
     {
@@ -65,7 +69,6 @@ void ImageLoader::read_image(const std::string &image_filepath)
         {
             cv::Mat img_rgb;
             cv::cvtColor(image, img_rgb, cv::COLOR_GRAY2RGB);
-            images[image_filepath] = img_rgb;
         }
         else if (image.channels() == 3)
         {
@@ -81,11 +84,9 @@ void ImageLoader::read_image(const std::string &image_filepath)
         }
         else
         {
-            images[image_filepath] = image;
             std::cerr << "[ERROR]: Image has an unsupported number "
                          "of channels: "
                       << image.channels() << std::endl;
-            images[image_filepath] = cv::Mat();
         }
     }
 }
