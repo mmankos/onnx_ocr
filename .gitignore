@@ -1,0 +1,4 @@
+build
+onnxruntime
+.cache
+auto_build.sh
