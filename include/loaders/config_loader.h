@@ -20,7 +20,7 @@ class ConfigLoader
   private:
     YAML::Node config_file;
 
-    YAML::Node loadConfigFile(const std::string &filepath);
+    YAML::Node load_config_file(const std::string &filepath);
 };
 
 template <typename T> std::optional<T> ConfigLoader::get(const std::string &key)

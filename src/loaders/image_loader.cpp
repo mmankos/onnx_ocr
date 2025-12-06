@@ -20,8 +20,8 @@ void ImageLoader::load_images(const std::string &image_path)
 {
     if (!std::filesystem::exists(image_path))
     {
-        std::cerr << "[ERROR] Path: " << image_path << " does not exist"
-                  << std::endl;
+        std::cerr << "[ERROR][ImageLoader::load_images] Path: " << image_path
+                  << " does not exist" << std::endl;
         throw std::runtime_error("Invalid path");
     }
     else if (std::filesystem::is_directory(image_path))
@@ -40,7 +40,7 @@ void ImageLoader::load_images(const std::string &image_path)
     else if (std::filesystem::is_regular_file(image_path))
     {
         std::filesystem::path entry_path(image_path);
-        std::string entry_extension = entry_path.extension().c_str();
+        std::string           entry_extension = entry_path.extension().c_str();
         if (supported_extensions.count(entry_extension))
         {
             read_image(entry_path);
@@ -48,7 +48,7 @@ void ImageLoader::load_images(const std::string &image_path)
     }
     else
     {
-        std::cerr << "[ERROR] Path: " << image_path
+        std::cerr << "[ERROR][ImageLoader::load_images] Path: " << image_path
                   << " exists but is neither a regular file nor a directory"
                   << std::endl;
         throw std::runtime_error("Invalid path");
@@ -60,33 +60,33 @@ void ImageLoader::read_image(const std::string &image_filepath)
     cv::Mat image = cv::imread(image_filepath, cv::IMREAD_COLOR);
     if (image.empty())
     {
-        std::cerr << "[ERROR]: Failed to read image: " << image_filepath
-                  << std::endl;
+        std::cerr << "[ERROR][ImageLoader::read_image] Failed to read image: "
+                  << image_filepath << std::endl;
     }
     else
     {
-        if (image.channels() == 1)
+        cv::Mat img_rgb;
+        int     image_channels = image.channels();
+
+        if (image_channels == 1)
         {
-            cv::Mat img_rgb;
             cv::cvtColor(image, img_rgb, cv::COLOR_GRAY2RGB);
         }
-        else if (image.channels() == 3)
+        else if (image_channels == 3)
         {
-            cv::Mat img_rgb;
             cv::cvtColor(image, img_rgb, cv::COLOR_BGR2RGB);
-            images[image_filepath] = img_rgb;
         }
-        else if (image.channels() == 4)
+        else if (image_channels == 4)
         {
-            cv::Mat img_rgb;
             cv::cvtColor(image, img_rgb, cv::COLOR_BGRA2RGB);
-            images[image_filepath] = img_rgb;
         }
         else
         {
-            std::cerr << "[ERROR]: Image has an unsupported number "
-                         "of channels: "
+            std::cerr << "[ERROR][ImageLoader::read_image] Image has an "
+                         "unsupported number of channels: "
                       << image.channels() << std::endl;
+            return;
         }
+        images[image_filepath] = img_rgb;
     }
 }

@@ -1,11 +1,13 @@
 #pragma once
 #include "yaml-cpp/yaml.h"
+#include <cstdint>
 #include <iostream>
 #include <memory>
 #include <onnxruntime_cxx_api.h>
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "loaders/config_loader.h"
@@ -15,18 +17,14 @@
 
 struct OnnxModelInputInfo
 {
-    std::string          name;
-    std::vector<int64_t> shape;
-};
-
-struct OnnxModelInput
-{
-    std::vector<OnnxModelInputInfo> inputs;
+    std::string                                name;
+    std::vector<int64_t>                       shape;
+    std::optional<std::pair<int64_t, int64_t>> image_shape;
 };
 
 struct OnnxModelInfo
 {
-    std::unordered_map<std::string, OnnxModelInput> model;
+    std::unordered_map<std::string, OnnxModelInputInfo> model;
 };
 
 class OnnxPredictor
@@ -57,9 +55,9 @@ class OnnxPredictor
     std::string image_path;
 
     std::unique_ptr<Ort::Session>
-         createOnnxSession(const std::string &filepath) const;
-    void fillModelInfo(const Ort::Session &session,
-                       const std::string  &model_name);
+         create_onnx_session(const std::string &filepath) const;
+    void fill_model_info(const Ort::Session &session,
+                         const std::string  &model_name);
     template <typename T> void print_vector(const std::vector<T> &v) const;
     void                       print_onnx_model_info() const;
 };
