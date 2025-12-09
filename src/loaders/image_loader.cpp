@@ -10,10 +10,11 @@ ImageLoader::ImageLoader(const std::string &image_path)
     load_images(image_path);
 }
 
-std::shared_ptr<std::unordered_map<std::string, cv::Mat>>
+std::shared_ptr<std::unordered_map<std::string, std::shared_ptr<cv::Mat>>>
 ImageLoader::get_images()
 {
-    return std::make_shared<std::unordered_map<std::string, cv::Mat>>(images);
+    return std::make_shared<
+        std::unordered_map<std::string, std::shared_ptr<cv::Mat>>>(images);
 }
 
 void ImageLoader::load_images(const std::string &image_path)
@@ -87,6 +88,6 @@ void ImageLoader::read_image(const std::string &image_filepath)
                       << image.channels() << std::endl;
             return;
         }
-        images[image_filepath] = img_rgb;
+        images[image_filepath] = std::make_shared<cv::Mat>(img_rgb);
     }
 }

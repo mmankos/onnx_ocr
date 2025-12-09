@@ -35,9 +35,10 @@ class OnnxPredictor
     void predict();
 
   private:
-    std::unique_ptr<ConfigLoader>                             config_loader;
-    std::unique_ptr<ImageLoader>                              image_loader;
-    std::shared_ptr<std::unordered_map<std::string, cv::Mat>> images;
+    std::unique_ptr<ConfigLoader> config_loader;
+    std::unique_ptr<ImageLoader>  image_loader;
+    std::shared_ptr<std::unordered_map<std::string, std::shared_ptr<cv::Mat>>>
+        images;
 
     Ort::Env                                     env;
     Ort::SessionOptions                          sessionOptions;

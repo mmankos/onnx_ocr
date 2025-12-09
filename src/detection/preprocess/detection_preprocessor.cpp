@@ -2,22 +2,22 @@
 
 DetectionPreprocessor::DetectionPreprocessor(
     const bool keep_ratio, const int side_length_limit,
-    const std::string                                           &limit_type,
-    const std::optional<std::pair<const int64_t, const int64_t>> image_shape,
-    std::pair<const std::string, cv::Mat>                       &image)
+    const std::string                                            &limit_type,
+    const std::optional<std::pair<int64_t, int64_t>>              image_shape,
+    const std::pair<const std::string, std::shared_ptr<cv::Mat>> &image)
     : keep_ratio(keep_ratio), side_length_limit(side_length_limit),
       limit_type(limit_type), image_shape(image_shape), image(image)
 {
-    if (image.second.empty())
+    if (image.second->empty())
     {
         throw std::invalid_argument("[ERROR][DetectionPreprocessor::"
                                     "DetectionPreprocessor] Input image " +
                                     image.first + "is empty (null image).");
     }
 
-    h = image.second.rows;
-    w = image.second.cols;
-    c = image.second.channels();
+    image_height   = image.second->rows;
+    image_width    = image.second->cols;
+    image_channels = image.second->channels();
 
     if (image_shape)
     {
@@ -33,130 +33,195 @@ DetectionPreprocessor::DetectionPreprocessor(
 
 void DetectionPreprocessor::preprocess()
 {
-    std::optional<std::pair<cv::Mat, cv::Vec2f>> resize_result = resize();
-    if (!resize_result)
+    int resize_result = resize();
+    if (resize_result == -1)
     {
         std::cerr << "[ERROR][DetectionPreprocessor::preprocess] Resize "
                      "operation failed for "
                   << image.first << std::endl;
         return;
     }
+    cv::Mat bgr_image;
+    cv::cvtColor(*image.second, bgr_image, cv::COLOR_RGB2BGR);
+    cv::imshow("Resized Image", bgr_image);
+    cv::waitKey(0);
+    cv::destroyAllWindows();
+
+    normalize_image();
+    cv::cvtColor(*image.second, bgr_image, cv::COLOR_RGB2BGR);
+    cv::imshow("Normalized Image", bgr_image);
+    cv::waitKey(0);
+    cv::destroyAllWindows();
+
+    hwc_to_chw();
 }
 
-std::optional<std::pair<cv::Mat, cv::Vec2f>>
-DetectionPreprocessor::resize() const
+int DetectionPreprocessor::resize()
 {
-    int resize_h = 0;
-    int resize_w = 0;
+    int resize_height = 0;
+    int resize_width  = 0;
 
-    if (h + w < 64)
+    if (image_height + image_width < 64)
     {
-        image.second = pad_image();
+        pad_image();
     }
 
     if (resizeMode == ResizeMode::FixedHeightWidthVariableRatio)
     { // Resize the image based on different limit types.
         float ratio = 1.0f;
 
-        if (limit_type == "max" && std::max(h, w) > side_length_limit)
+        if (limit_type == "max" &&
+            std::max(image_height, image_width) > side_length_limit)
         {
-            ratio = static_cast<float>(side_length_limit) / std::max(h, w);
+            ratio = static_cast<float>(side_length_limit) /
+                    std::max(image_height, image_width);
         }
-        else if (limit_type == "min" && std::min(h, w) < side_length_limit)
+        else if (limit_type == "min" &&
+                 std::min(image_height, image_width) < side_length_limit)
         {
-            ratio = static_cast<float>(side_length_limit) / std::min(h, w);
+            ratio = static_cast<float>(side_length_limit) /
+                    std::min(image_height, image_width);
         }
         else if (limit_type == "resize_long")
         {
-            ratio = static_cast<float>(side_length_limit) / std::max(h, w);
+            ratio = static_cast<float>(side_length_limit) /
+                    std::max(image_height, image_width);
         }
         else
         {
-            std::cerr << "[ERROR] Unknown limit_type: " << limit_type
-                      << std::endl;
-            return std::nullopt;
+            std::cerr
+                << "[ERROR][DetectionPreprocessor::resize] Unknown limit_type: "
+                << limit_type << std::endl;
+            return -1;
         }
 
-        resize_h = static_cast<int>(h * ratio);
-        resize_w = static_cast<int>(w * ratio);
+        resize_height = static_cast<int>(image_height * ratio);
+        resize_width  = static_cast<int>(image_width * ratio);
 
-        resize_h = std::max(int(std::round(resize_h / 32.0f) * 32), 32);
-        resize_w = std::max(int(std::round(resize_w / 32.0f) * 32), 32);
+        resize_height =
+            std::max(int(std::round(resize_height / 32.0f) * 32), 32);
+        resize_width = std::max(int(std::round(resize_width / 32.0f) * 32), 32);
     }
     else if (resizeMode == ResizeMode::FixedHeightVariableWidthRatio)
     { // Resize the image while maintaining the aspect ratio.
-        resize_h = image_shape->first;
-        resize_w = image_shape->second;
+        resize_height = image_shape->first;
+        resize_width  = image_shape->second;
 
         if (keep_ratio)
         {
-            float w_scaled =
-                (static_cast<float>(w) * resize_h) / static_cast<float>(h);
-            resize_w = static_cast<int>(std::ceil(w_scaled / 32.0)) * 32;
+            float w_scaled = (static_cast<float>(image_width) * resize_height) /
+                             static_cast<float>(image_height);
+            resize_width = static_cast<int>(std::ceil(w_scaled / 32.0)) * 32;
         }
     }
     else if (resizeMode == ResizeMode::ResizeLongSide)
     { // Resize the image based on the longer dimension.
-        int long_side = std::max(h, w);
+        int long_side = std::max(image_height, image_width);
 
         float ratio = static_cast<float>(side_length_limit) /
                       static_cast<float>(long_side);
 
-        resize_h = static_cast<int>(h * ratio);
-        resize_w = static_cast<int>(w * ratio);
+        resize_height = static_cast<int>(image_height * ratio);
+        resize_width  = static_cast<int>(image_width * ratio);
 
-        resize_h = ((resize_h + 127) / 128) * 128;
-        resize_w = ((resize_w + 127) / 128) * 128;
+        resize_height = ((resize_height + 127) / 128) * 128;
+        resize_width  = ((resize_width + 127) / 128) * 128;
     }
     else
     {
-        std::cerr << "[ERROR] Unknown ResizeMode" << std::endl;
-        return std::nullopt;
+        std::cerr << "[ERROR][DetectionPreprocessor::resize] Unknown ResizeMode"
+                  << std::endl;
+        return -1;
     }
 
-    if (resize_h <= 0 || resize_w <= 0)
+    if (resize_height <= 0 || resize_width <= 0)
     {
-        return std::nullopt;
+        return -1;
     }
 
-    float   ratio_h;
-    float   ratio_w;
-    cv::Mat resized;
-    cv::resize(image.second, resized, cv::Size(resize_w, resize_h), 0, 0,
-               cv::INTER_LINEAR);
+    cv::resize(*image.second, *image.second,
+               cv::Size(resize_width, resize_height), 0, 0, cv::INTER_LINEAR);
 
     if (resizeMode == ResizeMode::FixedHeightWidthVariableRatio)
     {
-        ratio_h = static_cast<float>(resize_h) / h;
-        ratio_w = static_cast<float>(resize_w) / w;
+        image_resize_ratio_height =
+            static_cast<float>(resize_height) / image_height;
+        image_resize_ratio_width =
+            static_cast<float>(resize_width) / image_width;
     }
     else if (resizeMode == ResizeMode::FixedHeightVariableWidthRatio)
     {
-        ratio_h = static_cast<float>(resize_h) / static_cast<float>(h);
-        ratio_w = static_cast<float>(resize_w) / static_cast<float>(w);
+        image_resize_ratio_height = static_cast<float>(resize_height) /
+                                    static_cast<float>(image_height);
+        image_resize_ratio_width =
+            static_cast<float>(resize_width) / static_cast<float>(image_width);
     }
     else if (resizeMode == ResizeMode::ResizeLongSide)
     {
-        ratio_h = static_cast<float>(resize_h) / h;
-        ratio_w = static_cast<float>(resize_w) / w;
+        image_resize_ratio_height =
+            static_cast<float>(resize_height) / image_height;
+        image_resize_ratio_width =
+            static_cast<float>(resize_width) / image_width;
     }
     else
     {
-        std::cerr << "[ERROR] Unknown ResizeMode" << std::endl;
-        return std::nullopt;
+        std::cerr << "[ERROR][DetectionPreprocessor::resize] Unknown ResizeMode"
+                  << std::endl;
+        return -1;
     }
 
-    return std::make_pair(resized, cv::Vec2f(ratio_h, ratio_w));
+    image_height = image.second->rows;
+    image_width  = image.second->cols;
+    return 0;
 }
 
-cv::Mat DetectionPreprocessor::pad_image() const
+void DetectionPreprocessor::pad_image()
 {
-    int new_h = std::max(32, h);
-    int new_w = std::max(32, w);
+    *image.second =
+        cv::Mat(std::max(32, image_height), std::max(32, image_width),
+                image.second->type(), cv::Scalar(0, 0, 0));
+    (*image.second)(cv::Rect(0, 0, image_width, image_height)) = *image.second;
+}
 
-    cv::Mat img_pad(new_h, new_w, image.second.type(), cv::Scalar(0, 0, 0));
+void DetectionPreprocessor::normalize_image()
+{
+    float                    scale = 1.0 / 255.0;
+    const std::vector<float> mean  = {0.485f, 0.456f, 0.406f};
+    const std::vector<float> std   = {0.229f, 0.224f, 0.225f};
 
-    image.second.copyTo(img_pad(cv::Rect(0, 0, w, h)));
+    image.second->convertTo(*image.second, CV_32F);
+    *image.second *= scale;
 
-    return img_pad;
+    for (int r = 0; r < image_height; ++r)
+    {
+        cv::Vec3f *row_ptr = image.second->ptr<cv::Vec3f>(r);
+        for (int c = 0; c < image_width; ++c)
+        {
+            cv::Vec3f &pixel = row_ptr[c];
+            for (int ch = 0; ch < image_channels; ++ch)
+            {
+                pixel[ch] = (pixel[ch] - mean[ch]) / std[ch];
+            }
+        }
+    }
+}
+
+void DetectionPreprocessor::hwc_to_chw()
+{
+    int     sizes[] = {3, image_height, image_width};
+    cv::Mat chw_image(3, sizes, CV_32F);
+
+    for (int h = 0; h < image_height; ++h)
+    {
+        for (int w = 0; w < image_width; ++w)
+        {
+            cv::Vec3f pixel = image.second->at<cv::Vec3f>(h, w);
+
+            chw_image.at<float>(0, h, w) = pixel[0];
+            chw_image.at<float>(1, h, w) = pixel[1];
+            chw_image.at<float>(2, h, w) = pixel[2];
+        }
+    }
+
+    *image.second = chw_image;
 }

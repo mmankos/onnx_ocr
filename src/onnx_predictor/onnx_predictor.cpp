@@ -64,7 +64,8 @@ OnnxPredictor::OnnxPredictor(const std::string &config_filepath)
 
 void OnnxPredictor::predict()
 {
-    for (std::pair<const std::string, cv::Mat> &image : *images)
+    for (const std::pair<const std::string, std::shared_ptr<cv::Mat>> &image :
+         *images)
     {
         std::unique_ptr<DetectionPreprocessor> detection_preprocessor =
             std::make_unique<DetectionPreprocessor>(
@@ -114,10 +115,9 @@ void OnnxPredictor::fill_model_info(const Ort::Session &session,
         auto tensor_info = type_info.GetTensorTypeAndShapeInfo();
 
         std::vector<int64_t> shape = tensor_info.GetShape();
-        std::optional<std::pair<const int64_t, const int64_t>> image_shape =
+        std::optional<std::pair<int64_t, int64_t>> image_shape =
             (shape.size() == 4 && shape[2] > 0 && shape[3] > 0)
-                ? std::optional<
-                      std::pair<const int64_t, const int64_t>>{std::make_pair(
+                ? std::optional<std::pair<int64_t, int64_t>>{std::make_pair(
                       shape[2], shape[3])}
                 : std::nullopt;
 
@@ -127,13 +127,13 @@ void OnnxPredictor::fill_model_info(const Ort::Session &session,
 }
 
 template <typename T>
-void OnnxPredictor::print_vector(const std::vector<T> &v) const
+void OnnxPredictor::print_vector(const std::vector<T> &vector) const
 {
     std::cout << "[";
-    for (size_t i = 0; i < v.size(); ++i)
+    for (size_t i = 0; i < vector.size(); ++i)
     {
-        std::cout << v[i];
-        if (i + 1 < v.size())
+        std::cout << vector[i];
+        if (i + 1 < vector.size())
             std::cout << ", ";
     }
     std::cout << "]";

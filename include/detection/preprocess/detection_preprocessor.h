@@ -3,7 +3,9 @@
 #include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <memory>
 #include <onnxruntime_cxx_api.h>
+#include <opencv2/highgui.hpp>
 #include <opencv2/opencv.hpp>
 #include <optional>
 #include <string>
@@ -21,22 +23,28 @@ class DetectionPreprocessor
   public:
     DetectionPreprocessor(
         const bool keep_ratio, const int side_length_limit,
-        const std::string &limit_type,
-        const std::optional<std::pair<const int64_t, const int64_t>> image_shape,
-        std::pair<const std::string, cv::Mat> &image);
+        const std::string                               &limit_type,
+        const std::optional<std::pair<int64_t, int64_t>> image_shape,
+        const std::pair<const std::string, std::shared_ptr<cv::Mat>> &image);
     void preprocess();
 
   private:
-    const bool        keep_ratio;
-    const int         side_length_limit;
-    const std::string limit_type;
-    const std::optional<std::pair<const int64_t, const int64_t>> image_shape;
-    std::pair<const std::string, cv::Mat>                       &image;
-    int                                                          h;
-    int                                                          w;
-    int                                                          c;
-    ResizeMode                                                   resizeMode;
+    const bool                                       keep_ratio;
+    const int                                        side_length_limit;
+    const std::string                                limit_type;
+    const std::optional<std::pair<int64_t, int64_t>> image_shape;
+    const std::pair<const std::string, std::shared_ptr<cv::Mat>> &image;
 
-    std::optional<std::pair<cv::Mat, cv::Vec2f>> resize() const;
-    cv::Mat                                      pad_image() const;
+    int image_height;
+    int image_width;
+    int image_channels;
+
+    ResizeMode resizeMode;
+    float      image_resize_ratio_height;
+    float      image_resize_ratio_width;
+
+    int  resize();
+    void pad_image();
+    void normalize_image();
+    void hwc_to_chw();
 };
