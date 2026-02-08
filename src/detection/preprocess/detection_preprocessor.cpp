@@ -3,7 +3,7 @@
 DetectionPreprocessor::DetectionPreprocessor(
     const bool keep_ratio, const int side_length_limit,
     const std::string                                            &limit_type,
-    const std::optional<std::pair<int64_t, int64_t>>              image_shape,
+    const std::shared_ptr<const std::vector<int64_t>>             image_shape,
     const std::pair<const std::string, std::shared_ptr<cv::Mat>> &image)
     : keep_ratio(keep_ratio), side_length_limit(side_length_limit),
       limit_type(limit_type), image_shape(image_shape), image(image)
@@ -19,13 +19,14 @@ DetectionPreprocessor::DetectionPreprocessor(
     image_width    = image.second->cols;
     image_channels = image.second->channels();
 
-    if (image_shape)
+    if (!image_shape->empty() && image_shape->size() == 2 &&
+        (*image_shape)[0] && (*image_shape)[1])
     {
-        resizeMode = ResizeMode::FixedHeightVariableWidthRatio;
+        resize_mode = ResizeMode::FixedHeightVariableWidthRatio;
     }
     else
     {
-        resizeMode = limit_type == "resize_long"
+        resize_mode = limit_type == "resize_long"
                          ? ResizeMode::ResizeLongSide
                          : ResizeMode::FixedHeightWidthVariableRatio;
     }
@@ -41,18 +42,7 @@ void DetectionPreprocessor::preprocess()
                   << image.first << std::endl;
         return;
     }
-    cv::Mat bgr_image;
-    cv::cvtColor(*image.second, bgr_image, cv::COLOR_RGB2BGR);
-    cv::imshow("Resized Image", bgr_image);
-    cv::waitKey(0);
-    cv::destroyAllWindows();
-
     normalize_image();
-    cv::cvtColor(*image.second, bgr_image, cv::COLOR_RGB2BGR);
-    cv::imshow("Normalized Image", bgr_image);
-    cv::waitKey(0);
-    cv::destroyAllWindows();
-
     hwc_to_chw();
 }
 
@@ -66,7 +56,7 @@ int DetectionPreprocessor::resize()
         pad_image();
     }
 
-    if (resizeMode == ResizeMode::FixedHeightWidthVariableRatio)
+    if (resize_mode == ResizeMode::FixedHeightWidthVariableRatio)
     { // Resize the image based on different limit types.
         float ratio = 1.0f;
 
@@ -102,10 +92,10 @@ int DetectionPreprocessor::resize()
             std::max(int(std::round(resize_height / 32.0f) * 32), 32);
         resize_width = std::max(int(std::round(resize_width / 32.0f) * 32), 32);
     }
-    else if (resizeMode == ResizeMode::FixedHeightVariableWidthRatio)
+    else if (resize_mode == ResizeMode::FixedHeightVariableWidthRatio)
     { // Resize the image while maintaining the aspect ratio.
-        resize_height = image_shape->first;
-        resize_width  = image_shape->second;
+        resize_height = (*image_shape)[0];
+        resize_width  = (*image_shape)[1];
 
         if (keep_ratio)
         {
@@ -114,7 +104,7 @@ int DetectionPreprocessor::resize()
             resize_width = static_cast<int>(std::ceil(w_scaled / 32.0)) * 32;
         }
     }
-    else if (resizeMode == ResizeMode::ResizeLongSide)
+    else if (resize_mode == ResizeMode::ResizeLongSide)
     { // Resize the image based on the longer dimension.
         int long_side = std::max(image_height, image_width);
 
@@ -142,21 +132,21 @@ int DetectionPreprocessor::resize()
     cv::resize(*image.second, *image.second,
                cv::Size(resize_width, resize_height), 0, 0, cv::INTER_LINEAR);
 
-    if (resizeMode == ResizeMode::FixedHeightWidthVariableRatio)
+    if (resize_mode == ResizeMode::FixedHeightWidthVariableRatio)
     {
         image_resize_ratio_height =
             static_cast<float>(resize_height) / image_height;
         image_resize_ratio_width =
             static_cast<float>(resize_width) / image_width;
     }
-    else if (resizeMode == ResizeMode::FixedHeightVariableWidthRatio)
+    else if (resize_mode == ResizeMode::FixedHeightVariableWidthRatio)
     {
         image_resize_ratio_height = static_cast<float>(resize_height) /
                                     static_cast<float>(image_height);
         image_resize_ratio_width =
             static_cast<float>(resize_width) / static_cast<float>(image_width);
     }
-    else if (resizeMode == ResizeMode::ResizeLongSide)
+    else if (resize_mode == ResizeMode::ResizeLongSide)
     {
         image_resize_ratio_height =
             static_cast<float>(resize_height) / image_height;

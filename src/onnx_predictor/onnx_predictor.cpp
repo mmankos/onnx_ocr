@@ -1,5 +1,7 @@
 #include "onnx_predictor/onnx_predictor.h"
 
+#include <opencv2/opencv.hpp>
+
 OnnxPredictor::OnnxPredictor(const std::string &config_filepath)
 {
     try
@@ -14,10 +16,13 @@ OnnxPredictor::OnnxPredictor(const std::string &config_filepath)
         throw std::runtime_error("Failed to create ONNX Env");
     }
 
-    sessionOptions.SetInterOpNumThreads(1);
-    sessionOptions.SetIntraOpNumThreads(1);
-    sessionOptions.SetGraphOptimizationLevel(
+    session_options.SetInterOpNumThreads(1);
+    session_options.SetIntraOpNumThreads(1);
+    session_options.SetGraphOptimizationLevel(
         GraphOptimizationLevel::ORT_ENABLE_ALL);
+
+    memory_info =
+        Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
 
     config_loader = std::make_unique<ConfigLoader>(config_filepath);
 
@@ -51,7 +56,6 @@ OnnxPredictor::OnnxPredictor(const std::string &config_filepath)
     side_length_limit =
         config_loader->get<int>(SIDE_LENGTH_LIMIT).value_or(760);
     limit_type = config_loader->get<std::string>(LIMIT_TYPE).value_or("best");
-
     image_path = config_loader->get<std::string>(IMAGE_PATH).value_or(".");
 
     image_loader = std::make_unique<ImageLoader>(image_path);
@@ -64,15 +68,31 @@ OnnxPredictor::OnnxPredictor(const std::string &config_filepath)
 
 void OnnxPredictor::predict()
 {
+    Detector detector(env, session_options, memory_info, det_filepath,
+                      onnx_model_info.model, keep_ratio, side_length_limit,
+                      limit_type);
+
     for (const std::pair<const std::string, std::shared_ptr<cv::Mat>> &image :
          *images)
     {
-        std::unique_ptr<DetectionPreprocessor> detection_preprocessor =
-            std::make_unique<DetectionPreprocessor>(
-                keep_ratio, side_length_limit, limit_type,
-                onnx_model_info.model[det_filepath].image_shape, image);
+        cv::Mat original_image                        = image.second->clone();
+        std::vector<std::array<cv::Point2f, 4>> boxes = detector.run(image);
 
-        detection_preprocessor->preprocess();
+        for (const auto &box : boxes)
+        {
+            std::vector<cv::Point> pts;
+            pts.reserve(4);
+            for (const auto &p : box)
+            {
+                pts.emplace_back(static_cast<int>(std::round(p.x)),
+                                 static_cast<int>(std::round(p.y)));
+            }
+            cv::polylines(original_image, pts, true, cv::Scalar(0, 255, 0), 2);
+        }
+
+        cv::imshow("Detections", original_image);
+        cv::waitKey(0);
+        cv::destroyWindow("Detections");
     }
 }
 
@@ -82,7 +102,7 @@ OnnxPredictor::create_onnx_session(const std::string &filepath) const
     try
     {
         std::unique_ptr<Ort::Session> session = std::make_unique<Ort::Session>(
-            env, filepath.c_str(), sessionOptions);
+            env, filepath.c_str(), session_options);
 
         std::cout << "\n[SUCCESS] " << filepath << " loaded successfully!\n";
 
@@ -115,14 +135,14 @@ void OnnxPredictor::fill_model_info(const Ort::Session &session,
         auto tensor_info = type_info.GetTensorTypeAndShapeInfo();
 
         std::vector<int64_t> shape = tensor_info.GetShape();
-        std::optional<std::pair<int64_t, int64_t>> image_shape =
+        std::vector<int64_t> image_shape =
             (shape.size() == 4 && shape[2] > 0 && shape[3] > 0)
-                ? std::optional<std::pair<int64_t, int64_t>>{std::make_pair(
-                      shape[2], shape[3])}
-                : std::nullopt;
+                ? std::vector<int64_t>{shape[2], shape[3]}
+                : std::vector<int64_t>();
 
         onnx_model_info.model[model_name] = OnnxModelInputInfo{
-            std::move(name.get()), std::move(shape), std::move(image_shape)};
+            std::move(name.get()), std::move(shape),
+            std::make_shared<std::vector<int64_t>>(image_shape)};
     }
 }
 

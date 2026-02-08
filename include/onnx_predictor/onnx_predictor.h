@@ -13,13 +13,15 @@
 #include "loaders/config_loader.h"
 #include "loaders/image_loader.h"
 
+#include "detection/detection.h"
+#include "detection/postprocess/detection_postprocessor.h"
 #include "detection/preprocess/detection_preprocessor.h"
 
 struct OnnxModelInputInfo
 {
-    std::string                                name;
-    std::vector<int64_t>                       shape;
-    std::optional<std::pair<int64_t, int64_t>> image_shape;
+    std::string                           name;
+    std::vector<int64_t>                  shape;
+    std::shared_ptr<std::vector<int64_t>> image_shape;
 };
 
 struct OnnxModelInfo
@@ -40,8 +42,11 @@ class OnnxPredictor
     std::shared_ptr<std::unordered_map<std::string, std::shared_ptr<cv::Mat>>>
         images;
 
-    Ort::Env                                     env;
-    Ort::SessionOptions                          sessionOptions;
+    Ort::Env            env;
+    Ort::SessionOptions session_options;
+    Ort::MemoryInfo     memory_info{nullptr};
+    Ort::Value          input_tensor{nullptr};
+
     std::string                                  det_filepath;
     std::unique_ptr<Ort::Session>                det_session{nullptr};
     std::string                                  rec_filepath;

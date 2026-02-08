@@ -23,23 +23,23 @@ class DetectionPreprocessor
   public:
     DetectionPreprocessor(
         const bool keep_ratio, const int side_length_limit,
-        const std::string                               &limit_type,
-        const std::optional<std::pair<int64_t, int64_t>> image_shape,
+        const std::string                                &limit_type,
+        const std::shared_ptr<const std::vector<int64_t>> image_shape,
         const std::pair<const std::string, std::shared_ptr<cv::Mat>> &image);
     void preprocess();
 
   private:
-    const bool                                       keep_ratio;
-    const int                                        side_length_limit;
-    const std::string                                limit_type;
-    const std::optional<std::pair<int64_t, int64_t>> image_shape;
+    const bool                                        keep_ratio;
+    const int                                         side_length_limit;
+    const std::string                                 limit_type;
+    const std::shared_ptr<const std::vector<int64_t>> image_shape;
     const std::pair<const std::string, std::shared_ptr<cv::Mat>> &image;
 
     int image_height;
     int image_width;
     int image_channels;
 
-    ResizeMode resizeMode;
+    ResizeMode resize_mode;
     float      image_resize_ratio_height;
     float      image_resize_ratio_width;
 
