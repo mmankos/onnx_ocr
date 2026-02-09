@@ -2,5 +2,5 @@ det_onnx_model_filepath : onnx_models/det.onnx
 rec_onnx_model_filepath : onnx_models/rec.onnx
 cls_onnx_model_filepath : onnx_models/cls.onnx
 side_length_limit: 760
-limit_type: min
+limit_type: best
 image_path: assets/test_images
