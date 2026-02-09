@@ -103,7 +103,7 @@ void OnnxPredictor::predict()
                     pts.emplace_back(static_cast<int>(std::round(p.x)),
                                      static_cast<int>(std::round(p.y)));
                 }
-                cv::polylines(display_image, pts, true, cv::Scalar(0, 255, 255),
+                cv::polylines(display_image, pts, true, cv::Scalar(0, 255, 0),
                               2);
             }
 
@@ -113,7 +113,7 @@ void OnnxPredictor::predict()
             cv::cvtColor(display_image, display_image, cv::COLOR_BGR2RGB);
 
             cv::imshow(window_name, display_image);
-            cv::moveWindow(window_name, 0, 0);
+            cv::moveWindow(window_name, 200, 200);
 
             cv::waitKey(0);
             cv::destroyWindow(window_name);
