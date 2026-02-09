@@ -24,6 +24,8 @@ class Detector
              bool keep_ratio, int side_length_limit,
              const std::string &limit_type);
 
+    const std::string &get_limit_type() const;
+    void               set_limit_type(std::string limit_type);
     std::vector<std::array<cv::Point2f, 4>>
     run(const std::pair<const std::string, std::shared_ptr<cv::Mat>> &image);
 

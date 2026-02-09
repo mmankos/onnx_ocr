@@ -68,31 +68,66 @@ OnnxPredictor::OnnxPredictor(const std::string &config_filepath)
 
 void OnnxPredictor::predict()
 {
+    const std::vector<std::string> limit_types = {"min", "max", "resize_long"};
+    const int                      limit_types_size = limit_types.size();
+    int                            limit_type_num   = 1;
+
     Detector detector(env, session_options, memory_info, det_filepath,
                       onnx_model_info.model, keep_ratio, side_length_limit,
                       limit_type);
 
-    for (const std::pair<const std::string, std::shared_ptr<cv::Mat>> &image :
-         *images)
+    if (limit_type == "best")
     {
-        cv::Mat original_image                        = image.second->clone();
-        std::vector<std::array<cv::Point2f, 4>> boxes = detector.run(image);
+        detector.set_limit_type(limit_types[0]);
+        limit_type_num = limit_types_size;
+    }
 
-        for (const auto &box : boxes)
+    for (int i = 0; i < limit_type_num; i++)
+    {
+        for (const std::pair<const std::string, std::shared_ptr<cv::Mat>>
+                 &image : *images)
         {
-            std::vector<cv::Point> pts;
-            pts.reserve(4);
-            for (const auto &p : box)
+            cv::Mat original_image = image.second->clone();
+            // separate display image to prevent redrawing bounding boxes on the
+            // same image
+            cv::Mat display_image = image.second->clone();
+
+            std::vector<std::array<cv::Point2f, 4>> boxes = detector.run(image);
+
+            for (const auto &box : boxes)
             {
-                pts.emplace_back(static_cast<int>(std::round(p.x)),
-                                 static_cast<int>(std::round(p.y)));
+                std::vector<cv::Point> pts;
+                pts.reserve(4);
+                for (const auto &p : box)
+                {
+                    pts.emplace_back(static_cast<int>(std::round(p.x)),
+                                     static_cast<int>(std::round(p.y)));
+                }
+                cv::polylines(display_image, pts, true, cv::Scalar(0, 255, 255),
+                              2);
             }
-            cv::polylines(original_image, pts, true, cv::Scalar(0, 255, 0), 2);
+
+            std::string window_name =
+                "Detection limit type: " + detector.get_limit_type();
+
+            cv::cvtColor(display_image, display_image, cv::COLOR_BGR2RGB);
+
+            cv::imshow(window_name, display_image);
+            cv::moveWindow(window_name, 0, 0);
+
+            cv::waitKey(0);
+            cv::destroyWindow(window_name);
+
+            // reset image to prevent double pipeline application
+            original_image.copyTo(*image.second);
         }
 
-        cv::imshow("Detections", original_image);
-        cv::waitKey(0);
-        cv::destroyWindow("Detections");
+        if (i + 1 < limit_types_size)
+        {
+            detector.set_limit_type(limit_types[i + 1]);
+            // if not present only the first limit type is ever applied
+            onnx_model_info.model[det_filepath].image_shape->clear();
+        }
     }
 }
 

@@ -21,8 +21,7 @@ class DetectionPostprocessor
 
     DetectionPostprocessor(float threshold = 0.3f, float box_thresh = 0.7f,
                            int max_candidates = 1000, float unclip_ratio = 2.0f,
-                           bool        use_dilation = false,
-                           std::string score_mode   = "slow");
+                           bool use_dilation = false);
 
     std::vector<std::array<cv::Point2f, 4>>
     postprocess(const cv::Mat &pred_maps, const int64_t original_image_height,
@@ -34,7 +33,6 @@ class DetectionPostprocessor
     int         max_candidates;
     float       unclip_ratio;
     int         min_size;
-    std::string score_mode;
     cv::Mat     dilation_kernel;
 
     std::vector<BoxResult> boxes_from_bitmap(const cv::Mat &pred,

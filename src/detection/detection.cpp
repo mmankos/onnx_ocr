@@ -12,6 +12,13 @@ Detector::Detector(
     postprocessor = std::make_unique<DetectionPostprocessor>();
 }
 
+const std::string &Detector::get_limit_type() const { return limit_type; }
+
+void Detector::set_limit_type(std::string limit_type)
+{
+    this->limit_type = std::move(limit_type);
+}
+
 std::vector<std::array<cv::Point2f, 4>> Detector::run(
     const std::pair<const std::string, std::shared_ptr<cv::Mat>> &image)
 {

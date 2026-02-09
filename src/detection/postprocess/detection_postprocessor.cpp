@@ -1,11 +1,12 @@
 #include "detection/postprocess/detection_postprocessor.h"
 
-DetectionPostprocessor::DetectionPostprocessor(
-    float threshold, float box_thresh, int max_candidates, float unclip_ratio,
-    bool use_dilation, std::string score_mode)
+DetectionPostprocessor::DetectionPostprocessor(float threshold,
+                                               float box_thresh,
+                                               int   max_candidates,
+                                               float unclip_ratio,
+                                               bool  use_dilation)
     : threshold(threshold), box_thresh(box_thresh),
-      max_candidates(max_candidates), unclip_ratio(unclip_ratio), min_size(3),
-      score_mode(std::move(score_mode))
+      max_candidates(max_candidates), unclip_ratio(unclip_ratio), min_size(3)
 {
     if (use_dilation)
     {

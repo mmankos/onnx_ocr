@@ -27,8 +27,8 @@ DetectionPreprocessor::DetectionPreprocessor(
     else
     {
         resize_mode = limit_type == "resize_long"
-                         ? ResizeMode::ResizeLongSide
-                         : ResizeMode::FixedHeightWidthVariableRatio;
+                          ? ResizeMode::ResizeLongSide
+                          : ResizeMode::FixedHeightWidthVariableRatio;
     }
 }
 
@@ -167,10 +167,13 @@ int DetectionPreprocessor::resize()
 
 void DetectionPreprocessor::pad_image()
 {
-    *image.second =
-        cv::Mat(std::max(32, image_height), std::max(32, image_width),
-                image.second->type(), cv::Scalar(0, 0, 0));
-    (*image.second)(cv::Rect(0, 0, image_width, image_height)) = *image.second;
+    cv::Mat old_image = *image.second;
+    cv::Mat padded_image(std::max(32, image_height), std::max(32, image_width),
+                         old_image.type(), cv::Scalar(0, 0, 0));
+
+    old_image.copyTo(padded_image(cv::Rect(0, 0, image_width, image_height)));
+
+    *image.second = padded_image;
 }
 
 void DetectionPreprocessor::normalize_image()
