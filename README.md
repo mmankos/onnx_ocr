@@ -5,6 +5,8 @@ replace the official high-level language implementations with improved textbox
 merging.
 
 
+https://github.com/user-attachments/assets/6538f827-cf79-4b2b-a91f-c35e77aaa5c3
+
 
 ## TODO
 - [X] Character Detection
