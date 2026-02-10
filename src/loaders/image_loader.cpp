@@ -66,20 +66,20 @@ void ImageLoader::read_image(const std::string &image_filepath)
     }
     else
     {
-        cv::Mat img_rgb;
+        cv::Mat image_out;
         int     image_channels = image.channels();
 
         if (image_channels == 1)
         {
-            cv::cvtColor(image, img_rgb, cv::COLOR_GRAY2RGB);
+            cv::cvtColor(image, image_out, cv::COLOR_GRAY2BGR);
         }
         else if (image_channels == 3)
         {
-            cv::cvtColor(image, img_rgb, cv::COLOR_BGR2RGB);
+            image_out = image;
         }
         else if (image_channels == 4)
         {
-            cv::cvtColor(image, img_rgb, cv::COLOR_BGRA2RGB);
+            cv::cvtColor(image, image_out, cv::COLOR_BGRA2BGR);
         }
         else
         {
@@ -88,6 +88,6 @@ void ImageLoader::read_image(const std::string &image_filepath)
                       << image.channels() << std::endl;
             return;
         }
-        images[image_filepath] = std::make_shared<cv::Mat>(img_rgb);
+        images[image_filepath] = std::make_shared<cv::Mat>(image_out);
     }
 }

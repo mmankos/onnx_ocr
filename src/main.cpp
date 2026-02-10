@@ -1,5 +1,6 @@
-#include "onnx_predictor/onnx_predictor.h"
 #include <iostream>
+
+#include "onnx_predictor/onnx_predictor.h"
 
 int main(int argc, char *argv[])
 {

@@ -4,11 +4,12 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <opencv2/opencv.hpp>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <opencv2/opencv.hpp>
+#include "utils/utils.h"
 
 class DetectionPostprocessor
 {
@@ -23,22 +24,27 @@ class DetectionPostprocessor
                            int max_candidates = 1000, float unclip_ratio = 2.0f,
                            bool use_dilation = false);
 
-    std::vector<std::array<cv::Point2f, 4>>
-    postprocess(const cv::Mat &pred_maps, const int64_t original_image_height,
-                const int64_t original_image_width) const;
+    std::vector<Box> postprocess(const cv::Mat &prediction_maps,
+                                 const int64_t  original_image_height,
+                                 const int64_t  original_image_width) const;
 
   private:
-    float       threshold;
-    float       box_thresh;
-    int         max_candidates;
-    float       unclip_ratio;
-    int         min_size;
-    cv::Mat     dilation_kernel;
+    float   threshold;
+    float   box_thresh;
+    int     max_candidates;
+    float   unclip_ratio;
+    int     min_size;
+    cv::Mat dilation_kernel;
 
     std::vector<BoxResult> boxes_from_bitmap(const cv::Mat &pred,
                                              const cv::Mat &bitmap,
                                              int            dest_width,
                                              int            dest_height) const;
+
+    cv::Mat extract_prediction_map(const cv::Mat &prediction_maps) const;
+    cv::Mat build_segmentation_mask(const cv::Mat &pred_map) const;
+    std::vector<Box>
+    convert_boxes(const std::vector<BoxResult> &boxes_result) const;
 
     std::vector<std::vector<cv::Point2f>>
     unclip(const std::vector<cv::Point2f> &box, float unclip_ratio) const;
@@ -49,14 +55,12 @@ class DetectionPostprocessor
     float box_score_slow(const cv::Mat                  &bitmap,
                          const std::vector<cv::Point2f> &contour) const;
 
-    std::array<cv::Point2f, 4>
-    order_points_clockwise(const std::array<cv::Point2f, 4> &pts) const;
+    Box order_points_clockwise(const Box &points) const;
 
-    std::array<cv::Point2f, 4>
-    clip_points_to_image(const std::array<cv::Point2f, 4> &points,
-                         int img_height, int img_width) const;
+    Box clip_points_to_image(const Box &points, int image_height,
+                             int image_width) const;
 
-    std::vector<std::array<cv::Point2f, 4>> filter_small_and_clip_boxes(
-        const std::vector<std::array<cv::Point2f, 4>> &boxes, int img_height,
-        int img_width) const;
+    std::vector<Box> filter_small_and_clip_boxes(const std::vector<Box> &boxes,
+                                                 int image_height,
+                                                 int image_width) const;
 };

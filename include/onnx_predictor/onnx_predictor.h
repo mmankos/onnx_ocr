@@ -1,10 +1,14 @@
 #pragma once
+
 #include "yaml-cpp/yaml.h"
+#include <algorithm>
 #include <cstdint>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <onnxruntime_cxx_api.h>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -12,22 +16,9 @@
 
 #include "loaders/config_loader.h"
 #include "loaders/image_loader.h"
-
-#include "detection/detection.h"
-#include "detection/postprocess/detection_postprocessor.h"
-#include "detection/preprocess/detection_preprocessor.h"
-
-struct OnnxModelInputInfo
-{
-    std::string                           name;
-    std::vector<int64_t>                  shape;
-    std::shared_ptr<std::vector<int64_t>> image_shape;
-};
-
-struct OnnxModelInfo
-{
-    std::unordered_map<std::string, OnnxModelInputInfo> model;
-};
+#include "ocr_pipeline/detection/detection.h"
+#include "onnx_predictor/onnx_model_info.h"
+#include "utils/utils.h"
 
 class OnnxPredictor
 {
@@ -52,7 +43,7 @@ class OnnxPredictor
     std::string                                  rec_filepath;
     std::unique_ptr<Ort::Session>                rec_session{nullptr};
     std::string                                  cls_filepath;
-    std::optional<std::unique_ptr<Ort::Session>> cls_session{nullptr};
+    std::optional<std::unique_ptr<Ort::Session>> cls_session;
     OnnxModelInfo                                onnx_model_info;
 
     bool        keep_ratio;
@@ -61,9 +52,9 @@ class OnnxPredictor
     std::string image_path;
 
     std::unique_ptr<Ort::Session>
-         create_onnx_session(const std::string &filepath) const;
-    void fill_model_info(const Ort::Session &session,
-                         const std::string  &model_name);
-    template <typename T> void print_vector(const std::vector<T> &v) const;
-    void                       print_onnx_model_info() const;
+    create_onnx_session(const std::string &filepath) const;
+
+    void show_detection_result(const cv::Mat          &image,
+                               const std::vector<Box> &boxes,
+                               const Detector         &detector) const;
 };

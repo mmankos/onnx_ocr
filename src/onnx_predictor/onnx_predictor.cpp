@@ -1,7 +1,5 @@
 #include "onnx_predictor/onnx_predictor.h"
 
-#include <opencv2/opencv.hpp>
-
 OnnxPredictor::OnnxPredictor(const std::string &config_filepath)
 {
     try
@@ -38,19 +36,24 @@ OnnxPredictor::OnnxPredictor(const std::string &config_filepath)
     {
         throw std::runtime_error("Failed to load ONNX model");
     }
-    fill_model_info(*det_session, det_filepath);
+    onnx_model_info.fill(*det_session, det_filepath);
 
     if (rec_filepath.empty() ||
         !(rec_session = create_onnx_session(rec_filepath)))
     {
         throw std::runtime_error("Failed to load ONNX model");
     }
-    fill_model_info(*rec_session, rec_filepath);
+    onnx_model_info.fill(*rec_session, rec_filepath);
 
-    if (!cls_filepath.empty() &&
-        (cls_session = create_onnx_session(cls_filepath)))
+    if (!cls_filepath.empty())
     {
-        fill_model_info(**cls_session, cls_filepath);
+        std::unique_ptr<Ort::Session> session =
+            create_onnx_session(cls_filepath);
+        if (session)
+        {
+            onnx_model_info.fill(*session, cls_filepath);
+            cls_session = std::move(session);
+        }
     }
 
     side_length_limit =
@@ -68,13 +71,39 @@ OnnxPredictor::OnnxPredictor(const std::string &config_filepath)
 
 void OnnxPredictor::predict()
 {
-    const std::vector<std::string> limit_types = {"min", "max", "resize_long"};
-    const int                      limit_types_size = limit_types.size();
-    int                            limit_type_num   = 1;
+    if (det_filepath.empty() || !det_session)
+    {
+        std::cerr << "[ERROR][OnnxPredictor::predict] Detection model not "
+                     "initialized.\n";
+        return;
+    }
+
+    if (onnx_model_info.model.find(det_filepath) == onnx_model_info.model.end())
+    {
+        std::cerr << "[ERROR][OnnxPredictor::predict] Detection model info "
+                     "missing.\n";
+        return;
+    }
+
+    const float det_thresh =
+        config_loader->get<float>(DET_THRESH).value_or(0.3f);
+    const float det_box_thresh =
+        config_loader->get<float>(DET_BOX_THRESH).value_or(0.6f);
+    const int det_max_candidates =
+        config_loader->get<int>(DET_MAX_CANDIDATES).value_or(1000);
+    const float det_unclip_ratio =
+        config_loader->get<float>(DET_UNCLIP_RATIO).value_or(1.5f);
+    const bool det_use_dilation =
+        config_loader->get<bool>(DET_USE_DILATION).value_or(false);
 
     Detector detector(env, session_options, memory_info, det_filepath,
                       onnx_model_info.model, keep_ratio, side_length_limit,
-                      limit_type);
+                      limit_type, det_thresh, det_box_thresh,
+                      det_max_candidates, det_unclip_ratio, det_use_dilation);
+
+    const std::vector<std::string> limit_types = {"min", "max", "resize_long"};
+    const int                      limit_types_size = limit_types.size();
+    int                            limit_type_num   = 1;
 
     if (limit_type == "best")
     {
@@ -87,48 +116,44 @@ void OnnxPredictor::predict()
         for (const std::pair<const std::string, std::shared_ptr<cv::Mat>>
                  &image : *images)
         {
-            cv::Mat original_image = image.second->clone();
-            // separate display image to prevent redrawing bounding boxes on the
-            // same image
-            cv::Mat display_image = image.second->clone();
+            const cv::Mat original_image = image.second->clone();
 
-            std::vector<std::array<cv::Point2f, 4>> boxes = detector.run(image);
+            std::vector<Box> boxes = detector.run(image);
+            show_detection_result(original_image, boxes, detector);
 
-            for (const auto &box : boxes)
-            {
-                std::vector<cv::Point> pts;
-                pts.reserve(4);
-                for (const auto &p : box)
-                {
-                    pts.emplace_back(static_cast<int>(std::round(p.x)),
-                                     static_cast<int>(std::round(p.y)));
-                }
-                cv::polylines(display_image, pts, true, cv::Scalar(0, 255, 0),
-                              2);
-            }
-
-            std::string window_name =
-                "Detection limit type: " + detector.get_limit_type();
-
-            cv::cvtColor(display_image, display_image, cv::COLOR_BGR2RGB);
-
-            cv::imshow(window_name, display_image);
-            cv::moveWindow(window_name, 200, 200);
-
-            cv::waitKey(0);
-            cv::destroyWindow(window_name);
-
-            // reset image to prevent double pipeline application
+            // reset image to prevent duplicate pipeline application
             original_image.copyTo(*image.second);
         }
 
         if (i + 1 < limit_types_size)
         {
             detector.set_limit_type(limit_types[i + 1]);
-            // if not present only the first limit type is ever applied
-            onnx_model_info.model[det_filepath].image_shape->clear();
         }
     }
+}
+
+void OnnxPredictor::show_detection_result(const cv::Mat          &image,
+                                          const std::vector<Box> &boxes,
+                                          const Detector &detector) const
+{
+    cv::Mat display_image = image.clone();
+    for (const auto &box : boxes)
+    {
+        std::vector<cv::Point> pts;
+        pts.reserve(4);
+        for (const auto &p : box)
+        {
+            pts.emplace_back(static_cast<int>(std::round(p.x)),
+                             static_cast<int>(std::round(p.y)));
+        }
+        cv::polylines(display_image, pts, true, cv::Scalar(0, 255, 0), 2);
+    }
+
+    std::string window_name =
+        "Detection limit type: " + detector.get_limit_type();
+    cv::imshow(window_name, display_image);
+    cv::moveWindow(window_name, 200, 200);
+    cv::waitKey(0);
 }
 
 std::unique_ptr<Ort::Session>
@@ -154,56 +179,5 @@ OnnxPredictor::create_onnx_session(const std::string &filepath) const
                   << e.GetOrtErrorCode() << ")\n";
 
         return nullptr;
-    }
-}
-
-void OnnxPredictor::fill_model_info(const Ort::Session &session,
-                                    const std::string  &model_name)
-{
-    Ort::AllocatorWithDefaultOptions allocator;
-    size_t                           num_inputs = session.GetInputCount();
-
-    for (size_t i = 0; i < num_inputs; ++i)
-    {
-        auto name        = session.GetInputNameAllocated(i, allocator);
-        auto type_info   = session.GetInputTypeInfo(i);
-        auto tensor_info = type_info.GetTensorTypeAndShapeInfo();
-
-        std::vector<int64_t> shape = tensor_info.GetShape();
-        std::vector<int64_t> image_shape =
-            (shape.size() == 4 && shape[2] > 0 && shape[3] > 0)
-                ? std::vector<int64_t>{shape[2], shape[3]}
-                : std::vector<int64_t>();
-
-        onnx_model_info.model[model_name] = OnnxModelInputInfo{
-            std::move(name.get()), std::move(shape),
-            std::make_shared<std::vector<int64_t>>(image_shape)};
-    }
-}
-
-template <typename T>
-void OnnxPredictor::print_vector(const std::vector<T> &vector) const
-{
-    std::cout << "[";
-    for (size_t i = 0; i < vector.size(); ++i)
-    {
-        std::cout << vector[i];
-        if (i + 1 < vector.size())
-            std::cout << ", ";
-    }
-    std::cout << "]";
-}
-
-void OnnxPredictor::print_onnx_model_info() const
-{
-    std::cout << "OnnxModelInfo:\n";
-
-    for (const auto &model : onnx_model_info.model)
-    {
-        std::cout << "  Model: " << model.first << "\n";
-        std::cout << "    Input name: " << model.second.name << "\n";
-        std::cout << "    Shape: ";
-        print_vector(model.second.shape);
-        std::cout << "\n";
     }
 }

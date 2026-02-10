@@ -5,8 +5,13 @@
 #include <yaml-cpp/yaml.h>
 
 #define DET_ONNX_MODEL_FILEPATH "det_onnx_model_filepath"
-#define REC_ONNX_MODEL_FILEPATH "rec_onnx_model_filepath"
+#define DET_THRESH              "det_thresh"
+#define DET_BOX_THRESH          "det_box_thresh"
+#define DET_MAX_CANDIDATES      "det_max_candidates"
+#define DET_UNCLIP_RATIO        "det_unclip_ratio"
+#define DET_USE_DILATION        "det_use_dilation"
 #define CLS_ONNX_MODEL_FILEPATH "cls_onnx_model_filepath"
+#define REC_ONNX_MODEL_FILEPATH "rec_onnx_model_filepath"
 #define SIDE_LENGTH_LIMIT       "side_length_limit"
 #define LIMIT_TYPE              "limit_type"
 #define IMAGE_PATH              "image_path"
