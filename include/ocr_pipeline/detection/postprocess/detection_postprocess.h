@@ -20,7 +20,7 @@ class DetectionPostprocessor
         float                    score;
     };
 
-    DetectionPostprocessor(float threshold = 0.3f, float box_thresh = 0.7f,
+    DetectionPostprocessor(float threshold = 0.3f, float box_threshold = 0.7f,
                            int max_candidates = 1000, float unclip_ratio = 2.0f,
                            bool use_dilation = false);
 
@@ -30,7 +30,7 @@ class DetectionPostprocessor
 
   private:
     float   threshold;
-    float   box_thresh;
+    float   box_threshold;
     int     max_candidates;
     float   unclip_ratio;
     int     min_size;

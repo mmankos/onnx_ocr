@@ -1,11 +1,11 @@
 #include "ocr_pipeline/detection/postprocess/detection_postprocess.h"
 
 DetectionPostprocessor::DetectionPostprocessor(float threshold,
-                                               float box_thresh,
+                                               float box_threshold,
                                                int   max_candidates,
                                                float unclip_ratio,
                                                bool  use_dilation)
-    : threshold(threshold), box_thresh(box_thresh),
+    : threshold(threshold), box_threshold(box_threshold),
       max_candidates(max_candidates), unclip_ratio(unclip_ratio), min_size(3)
 {
     if (use_dilation)
@@ -18,16 +18,16 @@ std::vector<Box> DetectionPostprocessor::postprocess(
     const cv::Mat &prediction_maps, const int64_t original_image_height,
     const int64_t original_image_width) const
 {
-    cv::Mat pred_map = extract_prediction_map(prediction_maps);
-    if (pred_map.empty())
+    cv::Mat prediction_map = extract_prediction_map(prediction_maps);
+    if (prediction_map.empty())
     {
         return {};
     }
 
-    cv::Mat mask = build_segmentation_mask(pred_map);
+    cv::Mat mask = build_segmentation_mask(prediction_map);
 
     std::vector<BoxResult> boxes_result = boxes_from_bitmap(
-        pred_map, mask, static_cast<int>(original_image_width),
+        prediction_map, mask, static_cast<int>(original_image_width),
         static_cast<int>(original_image_height));
 
     std::vector<Box> boxes = convert_boxes(boxes_result);
@@ -67,7 +67,7 @@ DetectionPostprocessor::boxes_from_bitmap(const cv::Mat &pred,
         }
 
         float score = box_score_slow(pred, contour);
-        if (score < box_thresh)
+        if (score < box_threshold)
         {
             continue;
         }
@@ -117,27 +117,28 @@ cv::Mat DetectionPostprocessor::extract_prediction_map(
         map_width  = prediction_maps.size[3];
     }
 
-    cv::Mat pred_map(map_height, map_width, CV_32F);
+    cv::Mat prediction_map(map_height, map_width, CV_32F);
     if (prediction_maps.dims == 4)
     {
         int          idx[]   = {0, 0, 0, 0};
         const float *src_ptr = prediction_maps.ptr<float>(idx);
-        std::memcpy(pred_map.data, src_ptr,
+        std::memcpy(prediction_map.data, src_ptr,
                     sizeof(float) * map_height * map_width);
     }
     else
     {
-        prediction_maps.copyTo(pred_map);
+        prediction_maps.copyTo(prediction_map);
     }
 
-    return pred_map;
+    return prediction_map;
 }
 
-cv::Mat
-DetectionPostprocessor::build_segmentation_mask(const cv::Mat &pred_map) const
+cv::Mat DetectionPostprocessor::build_segmentation_mask(
+    const cv::Mat &prediction_map) const
 {
     cv::Mat segmentation;
-    cv::threshold(pred_map, segmentation, threshold, 1, cv::THRESH_BINARY);
+    cv::threshold(prediction_map, segmentation, threshold, 1,
+                  cv::THRESH_BINARY);
     segmentation.convertTo(segmentation, CV_8U);
 
     if (!dilation_kernel.empty())

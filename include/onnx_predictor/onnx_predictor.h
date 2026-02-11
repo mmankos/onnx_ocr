@@ -17,6 +17,7 @@
 #include "loaders/config_loader.h"
 #include "loaders/image_loader.h"
 #include "ocr_pipeline/detection/detection.h"
+#include "ocr_pipeline/directional_classification/directional_classification.h"
 #include "onnx_predictor/onnx_model_info.h"
 #include "utils/utils.h"
 
@@ -54,7 +55,12 @@ class OnnxPredictor
     std::unique_ptr<Ort::Session>
     create_onnx_session(const std::string &filepath) const;
 
-    void show_detection_result(const cv::Mat          &image,
-                               const std::vector<Box> &boxes,
-                               const Detector         &detector) const;
+    std::pair<std::unique_ptr<DirectionalClassifier>, float> prepare_cls();
+
+    void show_boxes(
+        const cv::Mat &image, const std::vector<Box> &boxes,
+        const std::string         &window_name,
+        const std::vector<size_t> &sorted_box_indices                 = {},
+        const std::vector<std::pair<std::string, float>> &cls_results = {},
+        float cls_threshold = 0.0f) const;
 };
