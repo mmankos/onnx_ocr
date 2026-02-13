@@ -71,37 +71,16 @@ OnnxPredictor::OnnxPredictor(const std::string &config_filepath)
 
 void OnnxPredictor::predict()
 {
-    if (det_filepath.empty() || !det_session)
+    auto detector = prepare_det();
+    if (!detector)
     {
         std::cerr << "[ERROR][OnnxPredictor::predict] Detection model not "
-                     "initialized.\n";
+                     "ready.\n";
         return;
     }
-
-    if (onnx_model_info.model.find(det_filepath) == onnx_model_info.model.end())
-    {
-        std::cerr << "[ERROR][OnnxPredictor::predict] Detection model info "
-                     "missing.\n";
-        return;
-    }
-
-    const float det_threshold =
-        config_loader->get<float>(DET_THRESH).value_or(0.3f);
-    const float det_box_threshold =
-        config_loader->get<float>(DET_BOX_THRESH).value_or(0.6f);
-    const int det_max_candidates =
-        config_loader->get<int>(DET_MAX_CANDIDATES).value_or(1000);
-    const float det_unclip_ratio =
-        config_loader->get<float>(DET_UNCLIP_RATIO).value_or(1.5f);
-    const bool det_use_dilation =
-        config_loader->get<bool>(DET_USE_DILATION).value_or(false);
-
-    Detector detector(env, session_options, memory_info, det_filepath,
-                      onnx_model_info.model, keep_ratio, side_length_limit,
-                      limit_type, det_threshold, det_box_threshold,
-                      det_max_candidates, det_unclip_ratio, det_use_dilation);
 
     auto [classifier, cls_threshold_value] = prepare_cls();
+    auto [recognizer, drop_score]          = prepare_rec();
 
     const std::vector<std::string> limit_types = {"min", "max", "resize_long"};
     const int                      limit_types_size = limit_types.size();
@@ -109,7 +88,7 @@ void OnnxPredictor::predict()
 
     if (limit_type == "best")
     {
-        detector.set_limit_type(limit_types[0]);
+        detector->set_limit_type(limit_types[0]);
         limit_type_num = limit_types_size;
     }
 
@@ -120,7 +99,7 @@ void OnnxPredictor::predict()
         {
             const cv::Mat original_image = image.second->clone();
 
-            std::vector<Box> boxes = detector.run(image);
+            std::vector<Box> boxes = detector->run(image);
 
             std::vector<size_t>  sorted_box_indices = sort_box_indices(boxes);
             std::vector<cv::Mat> text_crops;
@@ -140,18 +119,58 @@ void OnnxPredictor::predict()
                 cls_results     = std::move(cls_output.second);
             }
 
+            // build rec text map: box_index -> recognized text
+            std::unordered_map<size_t, std::string> rec_text_map;
+            if (recognizer)
+            {
+                std::vector<std::pair<std::string, float>> rec_results =
+                    recognizer->run(text_crops);
+
+                std::vector<Box>                           filter_boxes;
+                std::vector<std::pair<std::string, float>> filter_rec_res;
+                filter_boxes.reserve(boxes.size());
+                filter_rec_res.reserve(rec_results.size());
+
+                const size_t rec_count =
+                    std::min(rec_results.size(), sorted_box_indices.size());
+                for (size_t r = 0; r < rec_count; ++r)
+                {
+                    const size_t box_idx = sorted_box_indices[r];
+                    if (box_idx >= boxes.size())
+                    {
+                        continue;
+                    }
+
+                    if (rec_results[r].second >= drop_score)
+                    {
+                        filter_boxes.push_back(boxes[box_idx]);
+                        filter_rec_res.push_back(rec_results[r]);
+                        rec_text_map[box_idx] = rec_results[r].first;
+                    }
+                }
+
+                std::cout << "\n[REC][" << detector->get_limit_type() << "] "
+                          << image.first << "\n";
+                if (filter_rec_res.empty())
+                {
+                    std::cout << "  (no results above drop_score)\n";
+                }
+                else
+                {
+                    for (size_t r = 0; r < filter_rec_res.size(); ++r)
+                    {
+                        std::cout << "  " << r << ": "
+                                  << filter_rec_res[r].first << " ("
+                                  << filter_rec_res[r].second << ")\n";
+                    }
+                }
+            }
+
             std::string window_name =
-                "Detection [" + detector.get_limit_type() + "]";
-            if (cls_results.empty())
-            {
-                show_boxes(original_image, boxes, window_name);
-            }
-            else
-            {
-                show_boxes(original_image, boxes, window_name,
-                           sorted_box_indices, cls_results,
-                           cls_threshold_value);
-            }
+                "Detection + Directional Classification + Recognition [" +
+                detector->get_limit_type() + "]";
+            show_boxes(original_image, boxes, window_name, sorted_box_indices,
+                       cls_results, cls_threshold_value, rec_text_map);
 
             // reset image to prevent duplicate pipeline application
             original_image.copyTo(*image.second);
@@ -159,9 +178,43 @@ void OnnxPredictor::predict()
 
         if (i + 1 < limit_types_size)
         {
-            detector.set_limit_type(limit_types[i + 1]);
+            detector->set_limit_type(limit_types[i + 1]);
         }
     }
+}
+
+std::unique_ptr<Detector> OnnxPredictor::prepare_det()
+{
+    if (det_filepath.empty() || !det_session)
+    {
+        std::cerr << "[ERROR][OnnxPredictor::prepare_det] Detection model not "
+                     "initialized.\n";
+        return nullptr;
+    }
+
+    if (onnx_model_info.model.find(det_filepath) == onnx_model_info.model.end())
+    {
+        std::cerr << "[ERROR][OnnxPredictor::prepare_det] Detection model info "
+                     "missing.\n";
+        return nullptr;
+    }
+
+    const float det_threshold =
+        config_loader->get<float>(DET_THRESH).value_or(0.3f);
+    const float det_box_threshold =
+        config_loader->get<float>(DET_BOX_THRESH).value_or(0.6f);
+    const int det_max_candidates =
+        config_loader->get<int>(DET_MAX_CANDIDATES).value_or(1000);
+    const float det_unclip_ratio =
+        config_loader->get<float>(DET_UNCLIP_RATIO).value_or(1.5f);
+    const bool det_use_dilation =
+        config_loader->get<bool>(DET_USE_DILATION).value_or(false);
+
+    return std::make_unique<Detector>(
+        env, session_options, memory_info, det_filepath, onnx_model_info.model,
+        keep_ratio, side_length_limit, limit_type, det_threshold,
+        det_box_threshold, det_max_candidates, det_unclip_ratio,
+        det_use_dilation);
 }
 
 std::pair<std::unique_ptr<DirectionalClassifier>, float>
@@ -170,6 +223,13 @@ OnnxPredictor::prepare_cls()
     if (cls_filepath.empty() || !cls_session.has_value() ||
         !cls_session.value())
     {
+        return {nullptr, 0.0f};
+    }
+
+    if (onnx_model_info.model.find(cls_filepath) == onnx_model_info.model.end())
+    {
+        std::cerr << "[WARN][OnnxPredictor::prepare_cls] Classification model "
+                     "info missing; skipping cls.\n";
         return {nullptr, 0.0f};
     }
 
@@ -229,96 +289,68 @@ OnnxPredictor::prepare_cls()
     return {std::move(classifier), cls_threshold};
 }
 
-void OnnxPredictor::show_boxes(
-    const cv::Mat &image, const std::vector<Box> &boxes,
-    const std::string                                &window_name,
-    const std::vector<size_t>                        &sorted_box_indices,
-    const std::vector<std::pair<std::string, float>> &cls_results,
-    float                                             cls_threshold) const
+std::pair<std::unique_ptr<TextRecognizer>, float> OnnxPredictor::prepare_rec()
 {
-    if (boxes.empty())
+    float drop_score = config_loader->get<float>(DROP_SCORE).value_or(0.82f);
+
+    if (rec_filepath.empty() || !rec_session)
     {
-        return;
+        return {nullptr, drop_score};
     }
 
-    const cv::Scalar color_normal(0, 200, 0);
-    const cv::Scalar color_rotated(0, 0, 255);
-    const bool       has_cls = !cls_results.empty();
-
-    cv::Mat display_image = image.clone();
-
-    std::unordered_map<size_t, bool> rotated_map;
-    if (has_cls)
+    if (onnx_model_info.model.find(rec_filepath) == onnx_model_info.model.end())
     {
-        const size_t count =
-            std::min(sorted_box_indices.size(), cls_results.size());
-        for (size_t i = 0; i < count; ++i)
+        std::cerr << "[ERROR][OnnxPredictor::prepare_rec] Recognition model "
+                     "info missing.\n";
+        return {nullptr, drop_score};
+    }
+
+    std::vector<int> rec_image_shape =
+        config_loader->get<std::vector<int>>(REC_IMAGE_SHAPE)
+            .value_or(std::vector<int>{});
+
+    auto model_it = onnx_model_info.model.find(rec_filepath);
+    if (model_it != onnx_model_info.model.end())
+    {
+        const auto &shape = model_it->second.shape;
+        if (shape.size() == 4 && shape[1] > 0 && shape[2] > 0)
         {
-            const auto &res = cls_results[i];
-            rotated_map[sorted_box_indices[i]] =
-                res.first.find("180") != std::string::npos &&
-                res.second > cls_threshold;
+            rec_image_shape = {static_cast<int>(shape[1]),
+                               static_cast<int>(shape[2]),
+                               static_cast<int>(shape[3] > 0 ? shape[3]
+                                                : rec_image_shape.size() == 3
+                                                    ? rec_image_shape[2]
+                                                    : 320)};
         }
     }
 
-    for (size_t b = 0; b < boxes.size(); ++b)
+    if (rec_image_shape.size() != 3)
     {
-        std::vector<cv::Point> pts;
-        pts.reserve(4);
-        for (const auto &p : boxes[b])
-        {
-            pts.emplace_back(static_cast<int>(std::round(p.x)),
-                             static_cast<int>(std::round(p.y)));
-        }
-
-        cv::Scalar color = color_normal;
-        if (has_cls)
-        {
-            auto it = rotated_map.find(b);
-            if (it != rotated_map.end() && it->second)
-            {
-                color = color_rotated;
-            }
-        }
-
-        cv::polylines(display_image, pts, true, color, 2);
+        rec_image_shape = {3, 48, 320};
     }
 
-    // legend strip below the image
-    if (has_cls)
-    {
-        const int strip_h = 30;
-        const int square  = 14;
-        const int pad     = 10;
+    const int rec_batch_size =
+        config_loader->get<int>(REC_BATCH_SIZE).value_or(6);
+    const std::string rec_char_dict_path =
+        config_loader->get<std::string>(REC_CHAR_DICT_PATH)
+            .value_or("data/dict.txt");
+    const bool use_space_char =
+        config_loader->get<bool>(REC_USE_SPACE_CHAR).value_or(true);
+    const float rec_norm_scale =
+        config_loader->get<float>(REC_NORM_SCALE).value_or(1.0f / 255.0f);
+    std::vector<float> rec_norm_mean =
+        config_loader->get<std::vector<float>>(REC_NORM_MEAN)
+            .value_or(std::vector<float>{0.5f, 0.5f, 0.5f});
+    std::vector<float> rec_norm_std =
+        config_loader->get<std::vector<float>>(REC_NORM_STD)
+            .value_or(std::vector<float>{0.5f, 0.5f, 0.5f});
 
-        cv::Mat strip(strip_h, display_image.cols, display_image.type(),
-                      cv::Scalar(40, 40, 40));
+    auto recognizer = std::make_unique<TextRecognizer>(
+        env, session_options, memory_info, rec_filepath, onnx_model_info.model,
+        rec_image_shape, rec_batch_size, rec_char_dict_path, use_space_char,
+        rec_norm_scale, std::move(rec_norm_mean), std::move(rec_norm_std));
 
-        int x = pad;
-        int y = (strip_h - square) / 2;
-
-        cv::rectangle(strip, cv::Point(x, y), cv::Point(x + square, y + square),
-                      color_normal, cv::FILLED);
-        x += square + 5;
-        cv::putText(strip, "normal", cv::Point(x, y + square - 2),
-                    cv::FONT_HERSHEY_SIMPLEX, 0.45, cv::Scalar(220, 220, 220),
-                    1);
-        x += 60;
-
-        cv::rectangle(strip, cv::Point(x, y), cv::Point(x + square, y + square),
-                      color_rotated, cv::FILLED);
-        x += square + 5;
-        cv::putText(strip, "rotated", cv::Point(x, y + square - 2),
-                    cv::FONT_HERSHEY_SIMPLEX, 0.45, cv::Scalar(220, 220, 220),
-                    1);
-
-        cv::vconcat(display_image, strip, display_image);
-    }
-
-    cv::imshow(window_name, display_image);
-    cv::moveWindow(window_name, 200, 200);
-    cv::waitKey(0);
-    cv::destroyAllWindows();
+    return {std::move(recognizer), drop_score};
 }
 
 std::unique_ptr<Ort::Session>
