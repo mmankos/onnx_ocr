@@ -1,4 +1,4 @@
-#include "detection/postprocess/detection_postprocessor.h"
+#include "ocr_pipeline/detection/postprocess/detection_postprocess.h"
 
 DetectionPostprocessor::DetectionPostprocessor(float threshold,
                                                float box_thresh,
@@ -14,64 +14,23 @@ DetectionPostprocessor::DetectionPostprocessor(float threshold,
     }
 }
 
-std::vector<std::array<cv::Point2f, 4>> DetectionPostprocessor::postprocess(
-    const cv::Mat &pred_maps, const int64_t original_image_height,
+std::vector<Box> DetectionPostprocessor::postprocess(
+    const cv::Mat &prediction_maps, const int64_t original_image_height,
     const int64_t original_image_width) const
 {
-    std::vector<std::array<cv::Point2f, 4>> boxes;
-
-    if (pred_maps.empty() || (pred_maps.dims != 4 && pred_maps.dims != 2))
+    cv::Mat pred_map = extract_prediction_map(prediction_maps);
+    if (pred_map.empty())
     {
-        return boxes;
+        return {};
     }
 
-    int map_height = pred_maps.rows;
-    int map_width  = pred_maps.cols;
-
-    if (pred_maps.dims == 4)
-    {
-        map_height = pred_maps.size[2];
-        map_width  = pred_maps.size[3];
-    }
-
-    cv::Mat pred_map(map_height, map_width, CV_32F);
-    if (pred_maps.dims == 4)
-    {
-        int          idx[]   = {0, 0, 0, 0};
-        const float *src_ptr = pred_maps.ptr<float>(idx);
-        std::memcpy(pred_map.data, src_ptr,
-                    sizeof(float) * map_height * map_width);
-    }
-    else
-    {
-        pred_maps.copyTo(pred_map);
-    }
-
-    cv::Mat segmentation;
-    cv::threshold(pred_map, segmentation, threshold, 1, cv::THRESH_BINARY);
-    segmentation.convertTo(segmentation, CV_8U);
-
-    cv::Mat mask = segmentation;
-    if (!dilation_kernel.empty())
-    {
-        cv::dilate(segmentation, mask, dilation_kernel);
-    }
+    cv::Mat mask = build_segmentation_mask(pred_map);
 
     std::vector<BoxResult> boxes_result = boxes_from_bitmap(
         pred_map, mask, static_cast<int>(original_image_width),
         static_cast<int>(original_image_height));
 
-    for (const auto &box : boxes_result)
-    {
-        if (box.points.size() != 4)
-        {
-            continue;
-        }
-        std::array<cv::Point2f, 4> quad = {box.points[0], box.points[1],
-                                           box.points[2], box.points[3]};
-        boxes.push_back(quad);
-    }
-
+    std::vector<Box> boxes = convert_boxes(boxes_result);
     return filter_small_and_clip_boxes(boxes,
                                        static_cast<int>(original_image_height),
                                        static_cast<int>(original_image_width));
@@ -135,6 +94,76 @@ DetectionPostprocessor::boxes_from_bitmap(const cv::Mat &pred,
         }
 
         boxes.push_back(BoxResult{box, score});
+    }
+
+    return boxes;
+}
+
+cv::Mat DetectionPostprocessor::extract_prediction_map(
+    const cv::Mat &prediction_maps) const
+{
+    if (prediction_maps.empty() ||
+        (prediction_maps.dims != 4 && prediction_maps.dims != 2))
+    {
+        return {};
+    }
+
+    int map_height = prediction_maps.rows;
+    int map_width  = prediction_maps.cols;
+
+    if (prediction_maps.dims == 4)
+    {
+        map_height = prediction_maps.size[2];
+        map_width  = prediction_maps.size[3];
+    }
+
+    cv::Mat pred_map(map_height, map_width, CV_32F);
+    if (prediction_maps.dims == 4)
+    {
+        int          idx[]   = {0, 0, 0, 0};
+        const float *src_ptr = prediction_maps.ptr<float>(idx);
+        std::memcpy(pred_map.data, src_ptr,
+                    sizeof(float) * map_height * map_width);
+    }
+    else
+    {
+        prediction_maps.copyTo(pred_map);
+    }
+
+    return pred_map;
+}
+
+cv::Mat
+DetectionPostprocessor::build_segmentation_mask(const cv::Mat &pred_map) const
+{
+    cv::Mat segmentation;
+    cv::threshold(pred_map, segmentation, threshold, 1, cv::THRESH_BINARY);
+    segmentation.convertTo(segmentation, CV_8U);
+
+    if (!dilation_kernel.empty())
+    {
+        cv::Mat dilated;
+        cv::dilate(segmentation, dilated, dilation_kernel);
+        return dilated;
+    }
+
+    return segmentation;
+}
+
+std::vector<Box> DetectionPostprocessor::convert_boxes(
+    const std::vector<BoxResult> &boxes_result) const
+{
+    std::vector<Box> boxes;
+    boxes.reserve(boxes_result.size());
+
+    for (const auto &box : boxes_result)
+    {
+        if (box.points.size() != 4)
+        {
+            continue;
+        }
+        Box rect = {box.points[0], box.points[1], box.points[2], box.points[3]};
+        boxes.push_back(rect);
     }
 
     return boxes;
@@ -316,10 +345,9 @@ float DetectionPostprocessor::box_score_slow(
     return static_cast<float>(mean_val[0]);
 }
 
-std::array<cv::Point2f, 4> DetectionPostprocessor::order_points_clockwise(
-    const std::array<cv::Point2f, 4> &pts) const
+Box DetectionPostprocessor::order_points_clockwise(const Box &points) const
 {
-    std::array<cv::Point2f, 4> rect;
+    Box rect;
 
     float min_sum     = std::numeric_limits<float>::max();
     float max_sum     = std::numeric_limits<float>::lowest();
@@ -328,7 +356,7 @@ std::array<cv::Point2f, 4> DetectionPostprocessor::order_points_clockwise(
 
     for (int i = 0; i < 4; ++i)
     {
-        float s = pts[i].x + pts[i].y;
+        float s = points[i].x + points[i].y;
         if (s < min_sum)
         {
             min_sum     = s;
@@ -341,8 +369,8 @@ std::array<cv::Point2f, 4> DetectionPostprocessor::order_points_clockwise(
         }
     }
 
-    rect[0] = pts[min_sum_idx];
-    rect[2] = pts[max_sum_idx];
+    rect[0] = points[min_sum_idx];
+    rect[2] = points[max_sum_idx];
 
     int idx1 = -1;
     int idx2 = -1;
@@ -362,49 +390,52 @@ std::array<cv::Point2f, 4> DetectionPostprocessor::order_points_clockwise(
         }
     }
 
-    float diff1 = pts[idx1].x - pts[idx1].y;
-    float diff2 = pts[idx2].x - pts[idx2].y;
+    float diff1 = points[idx1].x - points[idx1].y;
+    float diff2 = points[idx2].x - points[idx2].y;
 
-    if (diff1 < diff2)
+    // Python uses np.diff(axis=1) which computes y-x (column diff),
+    // then argmin→rect[1], argmax→rect[3].
+    // Since y-x = -(x-y), argmin(y-x) = argmax(x-y) and vice versa.
+    // So rect[1] gets the point with LARGER (x-y) = TR,
+    // and rect[3] gets the point with SMALLER (x-y) = BL.
+    // Result: [TL, TR, BR, BL] — standard clockwise order.
+    if (diff1 > diff2)
     {
-        rect[1] = pts[idx1];
-        rect[3] = pts[idx2];
+        rect[1] = points[idx1];
+        rect[3] = points[idx2];
     }
     else
     {
-        rect[1] = pts[idx2];
-        rect[3] = pts[idx1];
+        rect[1] = points[idx2];
+        rect[3] = points[idx1];
     }
 
     return rect;
 }
 
-std::array<cv::Point2f, 4> DetectionPostprocessor::clip_points_to_image(
-    const std::array<cv::Point2f, 4> &points, int img_height,
-    int img_width) const
+Box DetectionPostprocessor::clip_points_to_image(const Box &points,
+                                                 int        image_height,
+                                                 int        image_width) const
 {
-    std::array<cv::Point2f, 4> clipped = points;
+    Box clipped = points;
     for (auto &p : clipped)
     {
-        p.x = std::clamp(p.x, 0.0f, static_cast<float>(img_width - 1));
-        p.y = std::clamp(p.y, 0.0f, static_cast<float>(img_height - 1));
+        p.x = std::clamp(p.x, 0.0f, static_cast<float>(image_width - 1));
+        p.y = std::clamp(p.y, 0.0f, static_cast<float>(image_height - 1));
     }
     return clipped;
 }
 
-std::vector<std::array<cv::Point2f, 4>>
-DetectionPostprocessor::filter_small_and_clip_boxes(
-    const std::vector<std::array<cv::Point2f, 4>> &boxes, int img_height,
-    int img_width) const
+std::vector<Box> DetectionPostprocessor::filter_small_and_clip_boxes(
+    const std::vector<Box> &boxes, int image_height, int image_width) const
 {
-    std::vector<std::array<cv::Point2f, 4>> filtered;
+    std::vector<Box> filtered;
     filtered.reserve(boxes.size());
 
     for (const auto &box : boxes)
     {
-        std::array<cv::Point2f, 4> ordered = order_points_clockwise(box);
-        std::array<cv::Point2f, 4> clipped =
-            clip_points_to_image(ordered, img_height, img_width);
+        Box ordered = order_points_clockwise(box);
+        Box clipped = clip_points_to_image(ordered, image_height, image_width);
 
         float rect_width  = cv::norm(clipped[0] - clipped[1]);
         float rect_height = cv::norm(clipped[0] - clipped[3]);

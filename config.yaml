@@ -1,6 +1,11 @@
 det_onnx_model_filepath : onnx_models/det.onnx
-rec_onnx_model_filepath : onnx_models/rec.onnx
+det_thresh: 0.3
+det_box_thresh: 0.6
+det_max_candidates: 1000
+det_unclip_ratio: 1.5
+det_use_dilation: false
 cls_onnx_model_filepath : onnx_models/cls.onnx
+rec_onnx_model_filepath : onnx_models/rec.onnx
 side_length_limit: 760
 limit_type: best
 image_path: assets/test_images

@@ -1,4 +1,5 @@
 #pragma once
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -10,6 +11,8 @@
 #include <optional>
 #include <string>
 #include <vector>
+
+#include "utils/utils.h"
 
 enum class ResizeMode
 {
@@ -46,5 +49,7 @@ class DetectionPreprocessor
     int  resize();
     void pad_image();
     void normalize_image();
-    void hwc_to_chw();
+
+    std::pair<int, int> compute_resize_dims() const;
+    bool                apply_resize(int resize_height, int resize_width);
 };
