@@ -10,6 +10,14 @@ cls_batch_size: 6
 cls_thresh: 0.9
 cls_label_list: ["0", "180"]
 rec_onnx_model_filepath : onnx_models/rec.onnx
+rec_image_shape: [3, 48, 320]
+rec_batch_size: 6
+rec_char_dict_path: data/dict.txt
+rec_use_space_char: true
+rec_norm_scale: 0.00392156862745098
+rec_norm_mean: [0.5, 0.5, 0.5]
+rec_norm_std: [0.5, 0.5, 0.5]
+drop_score: 0.7
 side_length_limit: 760
 limit_type: best
 image_path: assets/test_images
