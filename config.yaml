@@ -5,6 +5,10 @@ det_max_candidates: 1000
 det_unclip_ratio: 1.5
 det_use_dilation: false
 cls_onnx_model_filepath : onnx_models/cls.onnx
+cls_image_shape: [3, 80, 160]
+cls_batch_size: 6
+cls_thresh: 0.9
+cls_label_list: ["0", "180"]
 rec_onnx_model_filepath : onnx_models/rec.onnx
 side_length_limit: 760
 limit_type: best
