@@ -4,7 +4,7 @@ C++ OCR pipeline utilizing ONNX Runtime for optimized inference. Designed to
 replace the official high-level language implementations with improved textbox
 merging.
 
-
+https://github.com/user-attachments/assets/0872c333-4dc0-4eff-9e78-f71caa83e123
 
 ## TODO
 - [X] Character Detection
