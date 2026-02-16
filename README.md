@@ -4,14 +4,12 @@ C++ OCR pipeline utilizing ONNX Runtime for optimized inference. Designed to
 replace the official high-level language implementations with improved textbox
 merging.
 
-
-https://github.com/user-attachments/assets/6538f827-cf79-4b2b-a91f-c35e77aaa5c3
-
+https://github.com/user-attachments/assets/0872c333-4dc0-4eff-9e78-f71caa83e123
 
 ## TODO
 - [X] Character Detection
-- [ ] Directional Classifier
-- [ ] Character Recognition
+- [X] Directional Classifier
+- [X] Character Recognition
 - [ ] Dockerize
 
 ## Setup
@@ -128,4 +126,11 @@ det.onnx  inference.yml  rec.onnx
 #### Download the dictionary for Character Recognition
 ```
 wget -O dict.txt https://raw.githubusercontent.com/PaddlePaddle/PaddleOCR/refs/heads/main/ppocr/utils/dict/ppocrv5_en_dict.txt
+```
+
+## Usage
+1. Update the `config.yaml` to match your settings and filepaths
+2.
+```
+$ make
 ```
